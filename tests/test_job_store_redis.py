@@ -1,6 +1,6 @@
 """Tests for RedisJobStore.
 
-Skipped automatically when Redis is not reachable on localhost.
+Skipped automatically when Redis is not reachable on 172.16.10.213.
 Uses DB 15 to avoid conflicts with production data.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ import redis
 # Skip guard: skip the entire module when Redis is unreachable
 # ---------------------------------------------------------------------------
 
-_REDIS_TEST_URL = os.environ.get("REDIS_TEST_URL", "redis://localhost:6379/15")
+_REDIS_TEST_URL = os.environ.get("REDIS_TEST_URL", "redis://172.16.10.213:6379/15")
 
 def _redis_available() -> bool:
     try:

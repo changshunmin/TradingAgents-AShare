@@ -6,7 +6,7 @@ export function getBaseUrl(): string {
     if (typeof window !== 'undefined' && window.location?.origin) {
         return window.location.origin.replace(/\/$/, '')
     }
-    return 'http://localhost:8000'
+    return 'http://172.16.10.213:8000'
 }
 
 

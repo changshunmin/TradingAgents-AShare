@@ -741,16 +741,9 @@ class CnAkshareProvider(BaseMarketDataProvider):
         ):
             df = CnAkshareProvider._spot_cache
         else:
-            try:
-                with AKSHARE_CALL_LOCK:
-                    ak = self._ak()
-                    df = ak.stock_zh_a_spot_em()
-            except TimeoutError as exc:
-                _lock_logger.warning("[realtime-quotes] Eastmoney slot timeout: %s", exc)
-                return json.dumps({})
-            except Exception as exc:
-                _lock_logger.warning("[realtime-quotes] Eastmoney fetch failed: %s", exc)
-                return json.dumps({})
+            with AKSHARE_CALL_LOCK:
+                ak = self._ak()
+                df = ak.stock_zh_a_spot_em()
             CnAkshareProvider._spot_cache = df
             CnAkshareProvider._spot_cache_ts = now
 
@@ -793,11 +786,30 @@ class CnAkshareProvider(BaseMarketDataProvider):
 
         sina_codes = []
         sina_to_original: dict[str, str] = {}
-        for code, original in code_to_original.items():
-            prefix = "sh" if code.startswith(("5", "6", "9")) else "bj" if code.startswith(("4", "8")) else "sz"
-            sina_code = f"{prefix}{code}"
+        for original_symbol in code_to_original.values():
+            # Parse the exchange from the original symbol (e.g., 000001.SH -> SH)
+            original_upper = original_symbol.upper()
+            if '.' in original_upper:
+                code, exchange = original_upper.split('.')
+                code_digits = re.sub(r'[^\d]', '', code)
+            else:
+                code_digits = re.sub(r'[^\d]', '', original_upper)
+                # Guess exchange from code
+                if code_digits.startswith(("5", "6", "9")):
+                    exchange = "SH"
+                elif code_digits.startswith(("0", "3", "2")):
+                    exchange = "SZ"
+                elif code_digits.startswith("4"):
+                    exchange = "BJ"
+                else:
+                    # Default to SZ
+                    exchange = "SZ"
+
+            # Sina uses lowercase prefix
+            prefix = exchange.lower()
+            sina_code = f"{prefix}{code_digits}"
             sina_codes.append(sina_code)
-            sina_to_original[sina_code] = original
+            sina_to_original[sina_code] = original_upper
 
         if not sina_codes:
             return json.dumps({})

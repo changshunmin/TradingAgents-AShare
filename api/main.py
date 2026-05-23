@@ -76,11 +76,11 @@ def _cors_allow_origins() -> list[str]:
     raw = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
     default_origins = [
         "http://127.0.0.1:5174",
-        "http://localhost:5174",
+        "http://172.16.10.213:5174",
         "http://127.0.0.1:5175",
-        "http://localhost:5175",
+        "http://172.16.10.213:5175",
         "http://127.0.0.1:5173",
-        "http://localhost:5173",
+        "http://172.16.10.213:5173",
     ]
     if not raw:
         return default_origins
@@ -204,38 +204,6 @@ async def _run_manual_trigger(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup and cleanup on shutdown."""
-    # Raise the AnyIO thread limiter ceiling so frequent sync endpoints
-    # (tracking-board polling, /v1/jobs/{id} polling, akshare-backed
-    # market endpoints) cannot starve each other when the event loop is
-    # also running long-lived `_run_job` tasks.
-    try:
-        from anyio import to_thread as _anyio_to_thread
-
-        limiter = _anyio_to_thread.current_default_thread_limiter()
-        desired = int(os.getenv("ANYIO_THREAD_LIMIT", "120"))
-        if limiter.total_tokens < desired:
-            limiter.total_tokens = desired
-            _log(f"AnyIO thread limiter raised to {desired}.")
-    except Exception as exc:
-        _log(f"Could not raise AnyIO thread limiter: {exc}")
-
-    # Default asyncio executor is used by `asyncio.to_thread`. The CPython
-    # default is `min(32, cpu_count + 4)`, which is too small when many
-    # `_run_job_inner` coroutines fan out concurrent `to_thread` calls for
-    # DB writes, LLM extraction, and akshare data collection.
-    new_default_executor: Optional[ThreadPoolExecutor] = None
-    try:
-        loop = asyncio.get_running_loop()
-        executor_workers = int(os.getenv("ASYNCIO_DEFAULT_EXECUTOR_WORKERS", "64"))
-        new_default_executor = ThreadPoolExecutor(
-            max_workers=executor_workers,
-            thread_name_prefix="ta-asyncio",
-        )
-        loop.set_default_executor(new_default_executor)
-        _log(f"Default asyncio executor set to {executor_workers} workers.")
-    except Exception as exc:
-        _log(f"Could not configure default asyncio executor: {exc}")
-
     init_db()
     _log("Database initialized.")
     store = get_job_store()
@@ -261,8 +229,6 @@ async def lifespan(app: FastAPI):
     yield
     _log("Shutting down: Cleaning up resources...")
     _executor.shutdown(wait=True)
-    if new_default_executor is not None:
-        new_default_executor.shutdown(wait=False)
     _log("Executor shutdown complete.")
 
 
@@ -334,7 +300,7 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-_JOB_TIMEOUT = int(os.getenv("TA_JOB_TIMEOUT", "1800"))  # seconds (默认 30 分钟，适配多 Agent 长流程分析)
+_JOB_TIMEOUT = int(os.getenv("TA_JOB_TIMEOUT", "600"))  # seconds
 def _create_tracked_task(coro, *, label: str = "Background task") -> asyncio.Task:
     """Create an asyncio task and keep a reference to prevent GC.
     Also logs unhandled exceptions via a done callback."""
@@ -1822,10 +1788,7 @@ async def _run_job_inner(
                         if db_updates:
                             await asyncio.to_thread(_horizon_partial_update, db_updates)
                 except Exception as e:
-                    _log(
-                        f"Error during horizon streaming ({horizon}): {e!r}\n"
-                        f"{traceback.format_exc()}"
-                    )
+                    _log(f"Error during horizon streaming ({horizon}): {e}")
                     raise
                 finally:
                     current_tracker_var.reset(_tracker_token)
@@ -1844,8 +1807,7 @@ async def _run_job_inner(
             horizon_errors = []
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
-                    tb = "".join(traceback.format_exception(type(r), r, r.__traceback__))
-                    _log(f"Horizon '{request.horizons[i]}' failed: {r!r}\n{tb}")
+                    _log(f"Horizon '{request.horizons[i]}' failed: {r}")
                     horizon_errors.append(f"{request.horizons[i]}: {r}")
             if horizon_errors:
                 raise RuntimeError(f"Horizon analysis failed: {'; '.join(horizon_errors)}")
@@ -2046,21 +2008,14 @@ async def _run_job_inner(
                         msg = messages[-1]
                         content = _extract_message_text(getattr(msg, "content", ""))
                         agent_name = getattr(msg, "name", None)
-                        msg_type = getattr(msg, "type", "unknown")  # human/system/ai/tool
 
                         if content:
-                            if agent_name:
-                                _log(f"[Agent Message] {agent_name}: {content[:200]}...")
-                            elif msg_type in ("human", "system"):
-                                # Graph 入口的初始 prompt，不是 agent 产出，跳过
-                                pass
-                            else:
-                                _log(f"[Agent Message] {msg_type}: {content[:200]}...")
+                            _log(f"[Agent Message] {agent_name}: {content[:200]}...")
 
                         for tool_call in getattr(msg, "tool_calls", []) or []:
                             tool_name = tool_call.get("name", "unknown") if isinstance(tool_call, dict) else getattr(tool_call, "name", "unknown")
                             tool_args = tool_call.get("args", {}) if isinstance(tool_call, dict) else getattr(tool_call, "args", {})
-                            _log(f"[Tool Call] {agent_name or msg_type}: {tool_name}")
+                            _log(f"[Tool Call] {agent_name}: {tool_name}")
 
                             agent_display = agent_name
                             if not agent_display:
@@ -2495,15 +2450,6 @@ def version_stats(payload: Dict[str, Any] = Body(...), request: Request = None, 
     return {"status": "ok"}
 
 
-_RESOLVABLE_SYMBOL_RE = re.compile(
-    r"^("
-    r"\d{6}\.(SH|SZ|BJ)"          # A 股 / 北交所
-    r"|\d{4,5}\.HK"                # 港股
-    r"|[A-Z][A-Z0-9.\-]{0,10}"     # 美股 / 通用 ticker
-    r")$"
-)
-
-
 @app.get("/v1/market/kline", response_model=KlineResponse)
 def get_kline(
     symbol: str,
@@ -2520,16 +2466,7 @@ def get_kline(
         candles = _fetch_index_kline(symbol, start, end)
     else:
         # Normalize symbol (convert "阳光电源" -> "300274.SZ")
-        original = symbol
         symbol = _normalize_symbol(symbol)
-        if not _RESOLVABLE_SYMBOL_RE.match(symbol):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"unrecognized symbol {original!r} (normalized to {symbol!r}); "
-                    f"expected formats: '300394.SZ' / 'AAPL' / '00700.HK'"
-                ),
-            )
         config = _build_runtime_config({})
         set_config(config)
         raw = route_to_vendor("get_stock_data", symbol, start, end)
@@ -2559,6 +2496,31 @@ def _normalize_ths_code(code: str) -> str:
     if code.startswith(("0", "3", "2")):
         return f"{code}.SZ"
     return code
+
+
+@app.get("/v1/market/quotes")
+def get_realtime_quotes(symbols: str = Query(..., description="股票代码，逗号分隔，如: 000001.SH,399001.SZ")) -> Dict[str, Any]:
+    """获取实时行情数据
+    支持A股指数和个股的实时报价
+    """
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        return {"quotes": {}}
+
+    # Build config for data routing
+    config = _build_runtime_config({})
+    set_config(config)
+
+    # Route to vendor for realtime quotes
+    try:
+        raw_json = route_to_vendor("get_realtime_quotes", symbol_list)
+        if not raw_json or raw_json.strip() == "{}":
+            return {"quotes": {}}
+        quotes_data = json.loads(raw_json)
+        return {"quotes": quotes_data}
+    except Exception as exc:
+        _log(f"[realtime-quotes] fetch failed: {type(exc).__name__}: {exc}")
+        return {"quotes": {}}
 
 
 @app.get("/v1/market/hot-stocks")
@@ -2670,20 +2632,13 @@ async def analyze(
     request: AnalyzeRequest,
     current_user: UserDB = Depends(_require_api_user),
 ) -> AnalyzeResponse:
-    explicit_context = _extract_request_user_context(request)
-
-    def _load_user_context() -> Dict[str, Any]:
-        with get_db_ctx() as db:
-            return _compose_analysis_user_context(
-                db,
-                current_user.id,
-                request.symbol,
-                explicit_context=explicit_context,
-            )
-
-    # Don't block the event loop on a sync SQLite read while the scheduler
-    # process may be holding write locks.
-    merged_user_context = await asyncio.to_thread(_load_user_context)
+    with get_db_ctx() as db:
+        merged_user_context = _compose_analysis_user_context(
+            db,
+            current_user.id,
+            request.symbol,
+            explicit_context=_extract_request_user_context(request),
+        )
     _apply_user_context_to_request(request, merged_user_context)
 
     job_id = uuid4().hex
@@ -2997,19 +2952,14 @@ async def chat_completions(
                     "focus_areas": focus_areas,
                     "specific_questions": specific_questions,
                 }
-                explicit_context = _extract_request_user_context(request)
-
-                def _load_user_context() -> Dict[str, Any]:
-                    with get_db_ctx() as db:
-                        return _compose_analysis_user_context(
-                            db,
-                            current_user.id,
-                            symbol,
-                            explicit_context=explicit_context,
-                            inferred_context=inferred_user_context,
-                        )
-
-                merged_user_context = await asyncio.to_thread(_load_user_context)
+                with get_db_ctx() as db:
+                    merged_user_context = _compose_analysis_user_context(
+                        db,
+                        current_user.id,
+                        symbol,
+                        explicit_context=_extract_request_user_context(request),
+                        inferred_context=inferred_user_context,
+                    )
                 pre_intent["user_context"] = merged_user_context
                 analyze_req = AnalyzeRequest(
                     symbol=symbol,
@@ -3077,19 +3027,14 @@ async def chat_completions(
         "focus_areas": focus_areas,
         "specific_questions": specific_questions,
     }
-    explicit_context = _extract_request_user_context(request)
-
-    def _load_user_context_nonstream() -> Dict[str, Any]:
-        with get_db_ctx() as db:
-            return _compose_analysis_user_context(
-                db,
-                current_user.id,
-                symbol,
-                explicit_context=explicit_context,
-                inferred_context=inferred_user_context,
-            )
-
-    merged_user_context = await asyncio.to_thread(_load_user_context_nonstream)
+    with get_db_ctx() as db:
+        merged_user_context = _compose_analysis_user_context(
+            db,
+            current_user.id,
+            symbol,
+            explicit_context=_extract_request_user_context(request),
+            inferred_context=inferred_user_context,
+        )
     pre_intent["user_context"] = merged_user_context
     analyze_req = AnalyzeRequest(
         symbol=symbol,
@@ -4524,21 +4469,25 @@ if os.path.exists(dist_path):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        # Skip API and special paths
+        if full_path.startswith(("_vercel", "_next", "_static", ".well-known", "robots.txt", "sitemap.xml", "favicon.ico")):
+            raise HTTPException(status_code=404, detail="Not Found")
+
         # 1. Define and resolve the absolute safe root
         base_path = os.path.realpath(dist_path)
-        
+
         # 2. Resolve the requested path (handling .. and symlinks)
         # We lstrip("/") to prevent os.path.join from treating it as an absolute path
         fullpath = os.path.realpath(os.path.join(base_path, full_path.lstrip("/")))
-        
+
         # 3. Security Check: The normalized path must start with the base_path
         if not fullpath.startswith(base_path):
             return FileResponse(os.path.join(base_path, "index.html"))
-            
+
         # 4. Final check: if it's a valid file, serve it
         if os.path.isfile(fullpath):
             return FileResponse(fullpath)
-            
+
         # Otherwise fallback to index.html for SPA routing
         return FileResponse(os.path.join(base_path, "index.html"))
 

@@ -77,7 +77,7 @@ def _render_markdown(text: str) -> str:
 def _infer_frontend_url() -> str:
     """Infer frontend URL from FRONTEND_URL or CORS_ALLOW_ORIGINS.
 
-    Priority: FRONTEND_URL env > first non-localhost CORS origin > first CORS origin > "".
+    Priority: FRONTEND_URL env > first non-172.16.10.213 CORS origin > first CORS origin > "".
     """
     explicit = os.getenv("FRONTEND_URL", "").strip()
     if explicit:
@@ -86,9 +86,9 @@ def _infer_frontend_url() -> str:
     if not raw:
         return ""
     origins = [o.strip() for o in raw.split(",") if o.strip()]
-    # Prefer non-localhost origin (production URL)
+    # Prefer non-172.16.10.213 origin (production URL)
     for o in origins:
-        if "localhost" not in o and "127.0.0.1" not in o:
+        if "172.16.10.213" not in o and "127.0.0.1" not in o:
             return o
     return origins[0] if origins else ""
 

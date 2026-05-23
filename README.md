@@ -107,13 +107,11 @@ docker run -d -p 8000:8000 \
   ghcr.io/kylinmountain/tradingagents-ashare:latest
 ```
 
-访问 `http://localhost:8000` 即可使用。
+访问 `http://172.16.10.213:8000` 即可使用。
 
 > **`TA_APP_SECRET_KEY`**：用于加密用户 LLM API Key 和签发登录 JWT。不设置时使用内置默认密钥（仅适合本地开发）。生产环境务必设置，且不可更改。
 
 > **LLM 配置**：启动后在前端"设置"页面配置模型厂商、API Key 和模型名称即可，无需环境变量预设。
-
-> **邮箱验证码**：未配置 SMTP（`MAIL_HOST` 等）时，验证码会在前端登录页直接显示为 `开发环境验证码：xxxxxx`，本地使用无需配置邮件服务器。如果需要真实邮件投递，参考 `.env.example` 配置 `MAIL_HOST` / `MAIL_USER` / `MAIL_PASS` 等并通过 `-e` 注入容器。
 
 ### 源码安装
 
@@ -138,7 +136,7 @@ cd ..
 uv run python -m uvicorn api.main:app --port 8000
 ```
 
-访问 `http://localhost:8000` 即可开始 AI 投研之旅。
+访问 `http://172.16.10.213:8000` 即可开始 AI 投研之旅。
 
 ## API 集成
 

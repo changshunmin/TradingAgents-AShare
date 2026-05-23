@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dos2unix /data/code/TradingAgents-AShare/frontend/src/pages/Analysis.tsx)",
+      "Bash(podman run *)",
+      "Bash(./startup.sh)",
+      "Bash(bash startup.sh)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8000/)",
+      "Bash(podman system *)",
+      "Bash(podman rmi *)",
+      "Bash(pkill -f \"podman build\")"
+    ]
+  }
+}

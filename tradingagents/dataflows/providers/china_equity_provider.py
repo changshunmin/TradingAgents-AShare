@@ -4,8 +4,6 @@ from .base import BaseMarketDataProvider
 class CnStubProvider(BaseMarketDataProvider):
     """Placeholder provider for CN market data integrations."""
 
-    is_placeholder = True
-
     @property
     def name(self) -> str:
         return "cn_stub"

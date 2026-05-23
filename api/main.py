@@ -2498,6 +2498,31 @@ def _normalize_ths_code(code: str) -> str:
     return code
 
 
+@app.get("/v1/market/quotes")
+def get_realtime_quotes(symbols: str = Query(..., description="股票代码，逗号分隔，如: 000001.SH,399001.SZ")) -> Dict[str, Any]:
+    """获取实时行情数据
+    支持A股指数和个股的实时报价
+    """
+    symbol_list = [s.strip() for s in symbols.split(",") if s.strip()]
+    if not symbol_list:
+        return {"quotes": {}}
+
+    # Build config for data routing
+    config = _build_runtime_config({})
+    set_config(config)
+
+    # Route to vendor for realtime quotes
+    try:
+        raw_json = route_to_vendor("get_realtime_quotes", symbol_list)
+        if not raw_json or raw_json.strip() == "{}":
+            return {"quotes": {}}
+        quotes_data = json.loads(raw_json)
+        return {"quotes": quotes_data}
+    except Exception as exc:
+        _log(f"[realtime-quotes] fetch failed: {type(exc).__name__}: {exc}")
+        return {"quotes": {}}
+
+
 @app.get("/v1/market/hot-stocks")
 def get_hot_stocks(source: str = "em", limit: int = 30) -> Dict:
     """Return hot A-share stocks from different sources.
@@ -4444,21 +4469,25 @@ if os.path.exists(dist_path):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
+        # Skip API and special paths
+        if full_path.startswith(("_vercel", "_next", "_static", ".well-known", "robots.txt", "sitemap.xml", "favicon.ico")):
+            raise HTTPException(status_code=404, detail="Not Found")
+
         # 1. Define and resolve the absolute safe root
         base_path = os.path.realpath(dist_path)
-        
+
         # 2. Resolve the requested path (handling .. and symlinks)
         # We lstrip("/") to prevent os.path.join from treating it as an absolute path
         fullpath = os.path.realpath(os.path.join(base_path, full_path.lstrip("/")))
-        
+
         # 3. Security Check: The normalized path must start with the base_path
         if not fullpath.startswith(base_path):
             return FileResponse(os.path.join(base_path, "index.html"))
-            
+
         # 4. Final check: if it's a valid file, serve it
         if os.path.isfile(fullpath):
             return FileResponse(fullpath)
-            
+
         # Otherwise fallback to index.html for SPA routing
         return FileResponse(os.path.join(base_path, "index.html"))
 

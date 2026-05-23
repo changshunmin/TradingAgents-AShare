@@ -11,8 +11,7 @@ import {
 } from 'lightweight-charts'
 import { Activity, CandlestickChart } from 'lucide-react'
 import { api } from '@/services/api'
-import type { KlineCandle } from '@/types'
-import { useAnalysisStore } from '@/stores/analysisStore'
+import type { KlineCandle, RealtimeQuote } from '@/types'
 
 interface KlinePanelProps {
     symbol: string
@@ -77,7 +76,6 @@ const INDEX_PRESETS = [
 ] as const
 
 export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) {
-    const currentAnalysisSymbol = useAnalysisStore((state) => state.currentSymbol)
     const containerRef = useRef<HTMLDivElement | null>(null)
     const chartRef = useRef<IChartApi | null>(null)
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -86,6 +84,7 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
     const [isDark, setIsDark] = useState(document.documentElement.classList.contains('dark'))
     const [candles, setCandles] = useState<KlineCandle[]>([])
     const [activeCandle, setActiveCandle] = useState<KlineCandle | null>(null)
+    const [realtimeQuote, setRealtimeQuote] = useState<RealtimeQuote | null>(null)
     const candlesRef = useRef<KlineCandle[]>([])
 
     const range = useMemo(() => {
@@ -262,6 +261,61 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
         }
     }, [range.end, range.start, symbol])
 
+    // Load realtime quote when symbol changes (one-time, no polling)
+    useEffect(() => {
+        let cancelled = false
+
+        const loadRealtime = async () => {
+            try {
+                const response = await api.getRealtimeQuotes([symbol])
+                if (cancelled) return
+                const quote = response.quotes[symbol.toUpperCase()]
+                if (quote && quote.price !== null) {
+                    setRealtimeQuote(quote)
+                    // Merge realtime quote with latest candle if same date
+                    const today = new Date().toISOString().slice(0, 10)
+                    const lastCandle = candlesRef.current[candlesRef.current.length - 1]
+                    if (lastCandle && lastCandle.date === today) {
+                        // Update existing today candle with realtime data
+                        const updated: KlineCandle = {
+                            ...lastCandle,
+                            open: quote.open ?? lastCandle.open,
+                            high: quote.high ?? lastCandle.high,
+                            low: quote.low ?? lastCandle.low,
+                            close: quote.price,
+                            volume: quote.volume ?? lastCandle.volume,
+                            amount: quote.amount ?? lastCandle.amount,
+                            change: quote.change ?? lastCandle.change,
+                            change_percent: quote.change_pct ?? lastCandle.change_percent,
+                        }
+                        setCandles(prev => [...prev.slice(0, -1), updated])
+                        candlesRef.current = [...candlesRef.current.slice(0, -1), updated]
+                        setActiveCandle(updated)
+
+                        // Update chart
+                        const time = toBusinessDay(today)
+                        if (time && seriesRef.current) {
+                            seriesRef.current.update({
+                                time,
+                                open: updated.open,
+                                high: updated.high,
+                                low: updated.low,
+                                close: updated.close,
+                            })
+                        }
+                    }
+                }
+            } catch (e) {
+                // Silent fail for realtime
+            }
+        }
+
+        loadRealtime()
+        return () => {
+            cancelled = true
+        }
+    }, [symbol])
+
     const panelCandle = activeCandle ?? (candles.length ? candles[candles.length - 1] : null)
     const panelChange = panelCandle?.change ?? (panelCandle ? panelCandle.close - panelCandle.open : null)
     const panelChangePercent = panelCandle?.change_percent ?? (
@@ -269,8 +323,6 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
     )
     const isUp = (panelChange ?? 0) >= 0
     const compactChangePercent = panelChangePercent == null ? '--' : `${panelChangePercent >= 0 ? '+' : ''}${formatNumber(panelChangePercent)}%`
-    const showCurrentSymbolButton = !!currentAnalysisSymbol && currentAnalysisSymbol !== symbol
-    const currentSymbolLabel = currentAnalysisSymbol ? getDisplayName(currentAnalysisSymbol).replace(/（.*?）/, '') : '当前标的'
 
     return (
         <section className="card h-full flex flex-col overflow-hidden">
@@ -280,8 +332,16 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
                     <div className="min-w-0 flex flex-wrap items-center gap-x-4 gap-y-1">
                         <h2 className="truncate text-lg font-semibold text-slate-900 dark:text-slate-100">{getDisplayName(symbol)} K线</h2>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                            <span className="text-slate-500 dark:text-slate-400">{panelCandle?.date || '--'}</span>
-                            <span className={`font-medium ${isUp ? 'text-red-500' : 'text-emerald-500'}`}>收盘 {formatNumber(panelCandle?.close)}</span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                                {realtimeQuote && panelCandle?.date === new Date().toISOString().slice(0, 10) ? (
+                                    <span className="text-emerald-500 dark:text-emerald-400">实时</span>
+                                ) : (
+                                    panelCandle?.date || '--'
+                                )}
+                            </span>
+                            <span className={`font-medium ${isUp ? 'text-red-500' : 'text-emerald-500'}`}>
+                                {realtimeQuote && panelCandle?.date === new Date().toISOString().slice(0, 10) ? '现价' : '收盘'} {formatNumber(panelCandle?.close)}
+                            </span>
                             <span className="text-slate-500 dark:text-slate-400">开盘 {formatNumber(panelCandle?.open)}</span>
                             <span className={`font-medium ${isUp ? 'text-red-500' : 'text-emerald-500'}`}>{compactChangePercent}</span>
                             <span className="text-slate-500 dark:text-slate-400">高/低 {formatNumber(panelCandle?.high)} / {formatNumber(panelCandle?.low)}</span>
@@ -290,27 +350,24 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                    {showCurrentSymbolButton && (
-                        <button
-                            onClick={() => onSymbolChange?.(currentAnalysisSymbol)}
-                            className="text-xs px-2.5 py-1 rounded border border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 transition-colors"
-                        >
-                            {currentSymbolLabel}
-                        </button>
-                    )}
-                    {INDEX_PRESETS.map((item) => (
-                        <button
-                            key={item.symbol}
-                            onClick={() => onSymbolChange?.(item.symbol)}
-                            className={`text-xs px-2 py-1 rounded border transition-colors ${item.symbol === symbol
-                                    ? 'border-blue-500 text-blue-500 bg-blue-50 dark:bg-blue-500/10'
-                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-400 dark:hover:border-slate-500'
-                                }`}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
+                <div className="flex justify-center gap-1.5">
+                    {INDEX_PRESETS.map((item) => {
+                        const top = item.label.slice(0, 2)
+                        const bottom = item.label.slice(2)
+                        return (
+                            <button
+                                key={item.symbol}
+                                onClick={() => onSymbolChange?.(item.symbol)}
+                                className={`text-xs font-semibold w-[40px] text-center px-1 py-1 rounded border transition-colors leading-tight ${item.symbol.toUpperCase() === symbol.toUpperCase()
+                                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                        : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                    }`}
+                            >
+                                <div>{top}</div>
+                                <div>{bottom}</div>
+                            </button>
+                        )
+                    })}
                 </div>
             </div>
             <div className="relative flex-1 min-h-0 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-hidden">

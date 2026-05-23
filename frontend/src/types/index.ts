@@ -302,6 +302,23 @@ export interface KlineResponse {
     candles: KlineCandle[]
 }
 
+export interface RealtimeQuote {
+    price: number | null
+    open: number | null
+    high: number | null
+    low: number | null
+    previous_close: number | null
+    change: number | null
+    change_pct: number | null
+    volume: number | null
+    amount: number | null
+    source: string | null
+}
+
+export interface RealtimeQuotesResponse {
+    quotes: Record<string, RealtimeQuote>
+}
+
 // Structured extraction types
 export interface RiskItem {
     name: string

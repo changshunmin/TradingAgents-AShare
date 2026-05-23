@@ -75,7 +75,23 @@ export default function Analysis() {
 
     useEffect(() => {
         if (currentSymbol) {
-            setActiveSymbol(currentSymbol)
+            // Ensure symbol has correct suffix format (e.g., 000001.SH)
+            const normalized = currentSymbol.toUpperCase()
+            // Only add suffix if it's a pure 6-digit code
+            if (/^\d{6}$/.test(normalized)) {
+                // Add appropriate suffix based on code prefix
+                if (normalized.startsWith('5') || normalized.startsWith('6') || normalized.startsWith('9')) {
+                    setActiveSymbol(`${normalized}.SH`)
+                } else if (normalized.startsWith('0') || normalized.startsWith('3') || normalized.startsWith('2')) {
+                    setActiveSymbol(`${normalized}.SZ`)
+                } else if (normalized.startsWith('4') || normalized.startsWith('8')) {
+                    setActiveSymbol(`${normalized}.BJ`)
+                } else {
+                    setActiveSymbol(`${normalized}.SH`)
+                }
+            } else {
+                setActiveSymbol(normalized)
+            }
         }
     }, [currentSymbol])
 
@@ -101,11 +117,12 @@ export default function Analysis() {
                 </aside>
 
                 <div className="min-w-0 space-y-4">
-                    <div className="h-[360px]">
+                    <div className="h-[430px]">
                         <KlinePanel
                             symbol={activeSymbol}
                             onSymbolChange={(symbol) => {
                                 setActiveSymbol(symbol)
+                                setCurrentSymbol(symbol)
                             }}
                         />
                     </div>

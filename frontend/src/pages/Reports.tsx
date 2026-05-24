@@ -1,6 +1,6 @@
 import { FileText, Download, Trash2, Search, ChevronLeft, ChevronRight, Loader2, History, Clock3 } from 'lucide-react'
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import TaskProgressBanner from '@/components/TaskProgressBanner'
 import { api } from '@/services/api'
 import type { Report, ReportDetail } from '@/types'
@@ -180,6 +180,7 @@ function exportReport(report: ReportDetail) {
 export default function Reports() {
     const { user } = useAuthStore()
     const [searchParams, setSearchParams] = useSearchParams()
+    const navigate = useNavigate()
     const setSearchParamsRef = useRef(setSearchParams)
     setSearchParamsRef.current = setSearchParams
     const PAGE_SIZE = 20
@@ -262,6 +263,11 @@ export default function Reports() {
     }, [])
 
     useEffect(() => { fetchReports(page) }, [fetchReports, page])
+
+    const handleViewKline = (e: React.MouseEvent, symbol: string) => {
+        e.stopPropagation()
+        navigate(`/analysis?symbol=${encodeURIComponent(symbol)}`)
+    }
 
     const handleDelete = async (e: React.MouseEvent, reportId: string) => {
         e.stopPropagation()
@@ -440,7 +446,14 @@ export default function Reports() {
                         返回列表
                     </button>
                     <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                        {selectedReport.name || selectedReport.symbol} 分析报告
+                        <button
+                            className="hover:text-blue-600 dark:hover:text-blue-400 hover:underline transition-colors"
+                            onClick={() => navigate(`/analysis?symbol=${encodeURIComponent(selectedReport.symbol)}`)}
+                            title="查看K线图"
+                        >
+                            {selectedReport.name || selectedReport.symbol}
+                        </button>
+                        {' '}分析报告
                         {selectedReport.name && selectedReport.name !== selectedReport.symbol && (
                             <span className="ml-2 text-base font-normal text-slate-400">{selectedReport.symbol}</span>
                         )}
@@ -605,9 +618,21 @@ export default function Reports() {
                                                         <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                                     </div>
                                                     <div>
-                                                        <p className="font-medium text-slate-900 dark:text-slate-100">{report.name || report.symbol}</p>
+                                                        <button
+                                                            className="font-medium text-left text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline transition-colors"
+                                                            onClick={e => handleViewKline(e, report.symbol)}
+                                                            title="查看K线图"
+                                                        >
+                                                            {report.name || report.symbol}
+                                                        </button>
                                                         {report.name && report.name !== report.symbol && (
-                                                            <p className="text-xs text-slate-400 dark:text-slate-500">{report.symbol}</p>
+                                                            <button
+                                                                className="block text-xs text-slate-400 dark:text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                                                                onClick={e => handleViewKline(e, report.symbol)}
+                                                                title="查看K线图"
+                                                            >
+                                                                {report.symbol}
+                                                            </button>
                                                         )}
                                                     </div>
                                                 </div>

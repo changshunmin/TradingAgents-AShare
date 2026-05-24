@@ -12,22 +12,24 @@ function runGit(cmd: string): string {
 }
 
 function getBuildMeta() {
-  const commit =
-    process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
-    runGit('git rev-parse --short HEAD') ||
-    'unknown'
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA
+  const commit = sha && sha !== 'unknown' ? sha.slice(0, 7) : (runGit('git rev-parse --short HEAD') || 'unknown')
 
-  const date =
-    (process.env.VERCEL_GIT_COMMIT_TIMESTAMP
-      ? new Date(process.env.VERCEL_GIT_COMMIT_TIMESTAMP).toISOString().slice(0, 10)
-      : '') ||
-    runGit('git show -s --format=%cd --date=format:%Y-%m-%d HEAD') ||
-    new Date().toISOString().slice(0, 10)
+  const ts = process.env.VERCEL_GIT_COMMIT_TIMESTAMP
+  let date = ''
+  if (ts && ts !== 'unknown') {
+    try {
+      date = new Date(ts).toISOString().slice(0, 10)
+    } catch { /* ignore invalid date */ }
+  }
+  if (!date) {
+    date = runGit('git show -s --format=%cd --date=format:%Y-%m-%d HEAD') || new Date().toISOString().slice(0, 10)
+  }
 
   return {
     commit,
     date,
-    version: `${date}+${commit}`,
+    version: `v4.5.12`,
   }
 }
 
@@ -35,7 +37,7 @@ const buildMeta = getBuildMeta()
 
 export default defineConfig({
   define: {
-    __APP_BUILD_COMMIT__: JSON.stringify(buildMeta.commit),
+    __APP_BUILD_COMMIT__: JSON.stringify((buildMeta.commit && buildMeta.commit !== 'unknown') ? buildMeta.commit : 'build'),
     __APP_BUILD_DATE__: JSON.stringify(buildMeta.date),
     __APP_BUILD_VERSION__: JSON.stringify(buildMeta.version),
   },

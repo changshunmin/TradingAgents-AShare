@@ -371,7 +371,7 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
                 </div>
             </div>
             <div className="relative flex-1 min-h-0 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 overflow-hidden">
-                <div ref={containerRef} className="absolute inset-0" />
+                <div ref={containerRef} className="absolute top-0 left-0 right-0 bottom-[5px]" />
                 {loading && (
                     <div className="absolute right-3 top-3 text-xs px-2 py-1 rounded bg-white/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-400 flex items-center gap-1">
                         <Activity className="w-3 h-3 animate-pulse" />

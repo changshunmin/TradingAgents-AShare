@@ -8,6 +8,7 @@ import KlinePanel from '@/components/KlinePanel'
 import DecisionCard from '@/components/DecisionCard'
 import RiskRadar from '@/components/RiskRadar'
 import KeyMetrics from '@/components/KeyMetrics'
+import { api } from '@/services/api'
 import { useAnalysisStore } from '@/stores/analysisStore'
 
 function mapDecision(decision?: string): 'buy' | 'sell' | 'hold' | 'add' | 'reduce' | 'watch' | undefined {
@@ -49,6 +50,10 @@ export default function Analysis() {
     const querySymbol = (searchParams.get('symbol') || '').trim().toUpperCase()
     const [activeSymbol, setActiveSymbol] = useState(() => querySymbol || useAnalysisStore.getState().currentSymbol || '000001.SH')
     const [activeSection, setActiveSection] = useState<string | undefined>()
+    const [lastAnalyzedStock, setLastAnalyzedStock] = useState<{
+        symbol: string
+        name: string
+    } | null>(null)
     const [debateDrawer, setDebateDrawer] = useState<'research' | 'risk' | null>(null)
     const reportRef = useRef<HTMLDivElement | null>(null)
     const {
@@ -72,6 +77,30 @@ export default function Analysis() {
     useEffect(() => {
         if (querySymbol) setActiveSymbol(querySymbol)
     }, [querySymbol])
+
+    // Load latest analyzed stock on mount
+    useEffect(() => {
+        api.getReports(undefined, 0, 1).then(resp => {
+            if (resp.reports.length > 0) {
+                const r = resp.reports[0]
+                setLastAnalyzedStock({ symbol: r.symbol, name: r.name || r.symbol })
+            }
+        }).catch(() => {})
+    }, [])
+
+    // Refresh latest analyzed stock when a new analysis completes
+    useEffect(() => {
+        if (report) {
+            api.getReports(undefined, 0, 1).then(resp => {
+                if (resp.reports.length > 0) {
+                    const r = resp.reports[0]
+                    setLastAnalyzedStock(prev =>
+                        prev?.symbol !== r.symbol ? { symbol: r.symbol, name: r.name || r.symbol } : prev
+                    )
+                }
+            }).catch(() => {})
+        }
+    }, [report])
 
     useEffect(() => {
         if (currentSymbol) {
@@ -109,6 +138,17 @@ export default function Analysis() {
                             onSymbolDetected={(symbol) => {
                                 setActiveSymbol(symbol)
                                 setCurrentSymbol(symbol)
+                                setLastAnalyzedStock(prev =>
+                                    prev?.symbol === symbol ? prev : { symbol, name: '' }
+                                )
+                                api.getReports(symbol, 0, 1).then(resp => {
+                                    if (resp.reports.length > 0) {
+                                        setLastAnalyzedStock({
+                                            symbol,
+                                            name: resp.reports[0].name || symbol,
+                                        })
+                                    }
+                                }).catch(() => {})
                             }}
                             onShowReport={handleShowReport}
                             initialInput={initialChatInput}
@@ -124,6 +164,8 @@ export default function Analysis() {
                                 setActiveSymbol(symbol)
                                 setCurrentSymbol(symbol)
                             }}
+                            lastAnalyzedSymbol={lastAnalyzedStock?.symbol}
+                            lastAnalyzedName={lastAnalyzedStock?.name}
                         />
                     </div>
 

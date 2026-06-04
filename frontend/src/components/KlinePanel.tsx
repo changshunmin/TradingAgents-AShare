@@ -16,6 +16,8 @@ import type { KlineCandle, RealtimeQuote } from '@/types'
 interface KlinePanelProps {
     symbol: string
     onSymbolChange?: (symbol: string) => void
+    lastAnalyzedSymbol?: string
+    lastAnalyzedName?: string
 }
 
 function toDateText(date: Date): string {
@@ -75,7 +77,7 @@ const INDEX_PRESETS = [
     { symbol: '899050.BJ', label: '北证50' },
 ] as const
 
-export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) {
+export default function KlinePanel({ symbol, onSymbolChange, lastAnalyzedSymbol, lastAnalyzedName }: KlinePanelProps) {
     const containerRef = useRef<HTMLDivElement | null>(null)
     const chartRef = useRef<IChartApi | null>(null)
     const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
@@ -351,6 +353,18 @@ export default function KlinePanel({ symbol, onSymbolChange }: KlinePanelProps) 
                     </div>
                 </div>
                 <div className="flex justify-center gap-1.5">
+                    {lastAnalyzedSymbol && lastAnalyzedName && (
+                        <button
+                            onClick={() => onSymbolChange?.(lastAnalyzedSymbol)}
+                            className={`text-xs font-semibold w-[40px] text-center px-1 py-1 rounded border transition-colors leading-tight ${lastAnalyzedSymbol.toUpperCase() === symbol.toUpperCase()
+                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                    : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                }`}
+                        >
+                            <div>{lastAnalyzedName.slice(0, 2)}</div>
+                            <div>{lastAnalyzedName.slice(2) || ' '}</div>
+                        </button>
+                    )}
                     {INDEX_PRESETS.map((item) => {
                         const top = item.label.slice(0, 2)
                         const bottom = item.label.slice(2)

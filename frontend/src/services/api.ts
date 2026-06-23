@@ -71,7 +71,7 @@ class ApiService {
         return this.request<JobStatus>(`/v1/jobs/${jobId}`)
     }
 
-    async getJobResult(jobId: string): Promise<{ job_id: string; status: string; decision: string; result: AnalysisReport }> {
+    async getJobResult(jobId: string): Promise<{ job_id: string; status: string; decision: string; result: AnalysisReport; name?: string }> {
         return this.request(`/v1/jobs/${jobId}/result`)
     }
 

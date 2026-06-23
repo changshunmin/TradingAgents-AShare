@@ -1895,12 +1895,14 @@ async def _run_job_inner(
                     _log(f"Failed to save report: {e}")
 
             # 所有后处理完成后再标记 completed，防止 SSE 超时提前关闭流
+            stock_name = _get_reverse_stock_map().get(request.symbol, request.symbol)
             _set_job(job_id, status="completed", result=result,
-                     decision=decision, finished_at=_utcnow_iso())
+                     decision=decision, finished_at=_utcnow_iso(), name=stock_name)
             _emit_job_event(job_id, "job.completed", {
                 "job_id": job_id, "decision": decision,
                 "direction": result["direction"],
                 "result": result, "mode": "dual_horizon",
+                "name": stock_name,
                 "risk_items": [r.model_dump() for r in structured.risks] if structured else [],
                 "key_metrics": [m.model_dump() for m in structured.key_metrics] if structured else [],
                 "confidence": result["confidence"],
@@ -2125,12 +2127,14 @@ async def _run_job_inner(
             except Exception as e:
                 _log(f"Failed to finalize report: {e}")
         # 所有后处理完成后再标记 completed，防止 SSE 超时提前关闭流
+        stock_name = _get_reverse_stock_map().get(request.symbol, request.symbol)
         _set_job(
             job_id,
             status="completed",
             result=result,
             decision=decision,
             finished_at=_utcnow_iso(),
+            name=stock_name,
         )
         _emit_job_event(
             job_id,
@@ -2140,6 +2144,7 @@ async def _run_job_inner(
                 "decision": decision,
                 "direction": result["direction"],
                 "result": result,
+                "name": stock_name,
                 "risk_items": [r.model_dump() for r in structured.risks] if structured else [],
                 "key_metrics": [m.model_dump() for m in structured.key_metrics] if structured else [],
                 "confidence": result["confidence"],
@@ -2709,6 +2714,7 @@ def get_job_result(job_id: str, current_user: UserDB = Depends(_require_api_user
         "decision": job.get("decision"),
         "result": job.get("result"),
         "finished_at": job.get("finished_at"),
+        "name": job.get("name"),
     }
 
 

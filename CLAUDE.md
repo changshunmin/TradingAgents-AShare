@@ -23,7 +23,7 @@ podman logs -f tradingagents                                  # Follow logs
 podman exec tradingagents env | grep -E 'MAIL_|TA_'          # Verify env vars in container
 
 # One-shot rebuild + restart
-podman build -t tradingagents-ashare:latest . && podman stop tradingagents && podman rm tradingagents && cd /opt/tradingagents && ./startup.sh
+podman build -t tradingagents-ashare:latest . && cd /opt/tradingagents && ./startup.sh
 ```
 
 ## Architecture
